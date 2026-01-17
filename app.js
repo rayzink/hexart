@@ -1,101 +1,389 @@
 /**
- * HexCraft - Interactive Hex Art Creator
- * A progressive web application for creating hexagonal pixel art
+ * HexCraft 3D - Voxel Hex World Builder
+ * A Three.js based 3D hexagonal voxel building game
  */
 
 // ============================================================================
-// Configuration & State
+// Configuration
 // ============================================================================
 
 const CONFIG = {
-    gridSize: 20,
-    hexSize: 30,
-    showGridLines: true,
-    backgroundColor: '#0f0f23',
-    gridLineColor: '#2a2a4a',
-    maxHistorySteps: 50,
+    gridSize: 15,           // Grid radius
+    hexRadius: 1,           // Hex tile radius
+    hexHeight: 0.4,         // Hex tile height
+    maxHeight: 20,          // Max stack height
+    cameraDistance: 25,
+    flySpeed: 0.15,
+    sprintMultiplier: 2.5,
     soundEnabled: true
 };
 
-const STATE = {
-    currentTool: 'draw',
-    currentColor: '#6366f1',
-    isDrawing: false,
-    isPanning: false,
-    zoom: 1,
-    panOffset: { x: 0, y: 0 },
-    lastPanPosition: { x: 0, y: 0 },
-    pinchDistance: 0,
-    hexCells: new Map(),
-    history: [],
-    historyIndex: -1,
-    recentColors: [],
-    hoveredHex: null
-};
-
-// Preset color palette
-const PRESET_COLORS = [
-    '#ef4444', '#f97316', '#f59e0b', '#eab308',
-    '#84cc16', '#22c55e', '#14b8a6', '#06b6d4',
-    '#0ea5e9', '#3b82f6', '#6366f1', '#8b5cf6',
-    '#a855f7', '#d946ef', '#ec4899', '#f43f5e',
-    '#ffffff', '#e5e5e5', '#a3a3a3', '#737373',
-    '#525252', '#404040', '#262626', '#171717'
+// Color palette with special materials
+const MATERIALS = [
+    { name: 'Stone', color: '#6b7280', behavior: null },
+    { name: 'Grass', color: '#22c55e', behavior: null },
+    { name: 'Water', color: '#0ea5e9', behavior: 'flows' },
+    { name: 'Lava', color: '#ef4444', behavior: 'converts_water' },
+    { name: 'Fire', color: '#f97316', behavior: 'destroys' },
+    { name: 'Sand', color: '#fbbf24', behavior: 'falls' },
+    { name: 'Wood', color: '#92400e', behavior: null },
+    { name: 'Ice', color: '#67e8f9', behavior: null },
+    { name: 'Purple', color: '#a855f7', behavior: null },
+    { name: 'Pink', color: '#ec4899', behavior: null },
+    { name: 'White', color: '#f5f5f5', behavior: null },
+    { name: 'Black', color: '#1f2937', behavior: null },
 ];
 
 // ============================================================================
-// DOM Elements
+// State
 // ============================================================================
 
-const elements = {};
+const STATE = {
+    mode: 'orbit',          // 'orbit' or 'fly'
+    currentMaterial: 0,
+    brushSize: 1,
+    blocks: new Map(),      // "x,y,z" -> materialIndex
+    hoveredBlock: null,
+    hoveredFace: null,
+    isPlacing: false,
+    history: [],
+    historyIndex: -1,
 
-function initElements() {
-    elements.canvas = document.getElementById('hexCanvas');
-    elements.ctx = elements.canvas.getContext('2d');
-    elements.canvasContainer = document.getElementById('canvasContainer');
-    elements.currentColor = document.getElementById('currentColor');
-    elements.colorPicker = document.getElementById('colorPicker');
-    elements.presetColors = document.getElementById('presetColors');
-    elements.recentColors = document.getElementById('recentColors');
-    elements.mobilePresetColors = document.getElementById('mobilePresetColors');
-    elements.mobileColorPicker = document.getElementById('mobileColorPicker');
-    elements.mobileColorPreview = document.querySelector('.mobile-color-preview');
-    elements.undoBtn = document.getElementById('undoBtn');
-    elements.redoBtn = document.getElementById('redoBtn');
-    elements.clearBtn = document.getElementById('clearBtn');
-    elements.downloadBtn = document.getElementById('downloadBtn');
-    elements.soundToggle = document.getElementById('soundToggle');
-    elements.settingsBtn = document.getElementById('settingsBtn');
-    elements.settingsModal = document.getElementById('settingsModal');
-    elements.closeSettings = document.getElementById('closeSettings');
-    elements.zoomIn = document.getElementById('zoomIn');
-    elements.zoomOut = document.getElementById('zoomOut');
-    elements.zoomReset = document.getElementById('zoomReset');
-    elements.zoomLevel = document.getElementById('zoomLevel');
-    elements.gridSizeSlider = document.getElementById('gridSizeSlider');
-    elements.gridSizeValue = document.getElementById('gridSizeValue');
-    elements.hexSizeSlider = document.getElementById('hexSizeSlider');
-    elements.hexSizeValue = document.getElementById('hexSizeValue');
-    elements.showGridLines = document.getElementById('showGridLines');
-    elements.bgColorPicker = document.getElementById('bgColorPicker');
-    elements.applySettings = document.getElementById('applySettings');
-    elements.toastContainer = document.getElementById('toastContainer');
-    elements.installBanner = document.getElementById('installBanner');
-    elements.installBtn = document.getElementById('installBtn');
-    elements.dismissInstall = document.getElementById('dismissInstall');
-    elements.mobileToolbar = document.getElementById('mobileToolbar');
-    elements.mobileColorBtn = document.getElementById('mobileColorBtn');
-    elements.mobileColorOverlay = document.getElementById('mobileColorOverlay');
-    elements.closeMobileColor = document.getElementById('closeMobileColor');
-    elements.mobileMenuOverlay = document.getElementById('mobileMenuOverlay');
-    elements.mobileMenu = document.getElementById('mobileMenu');
-    elements.mobileUndo = document.getElementById('mobileUndo');
-    elements.mobileRedo = document.getElementById('mobileRedo');
-    elements.mobileClear = document.getElementById('mobileClear');
-    elements.mobileDownload = document.getElementById('mobileDownload');
-    elements.mobileSoundToggle = document.getElementById('mobileSoundToggle');
-    elements.collapseColors = document.getElementById('collapseColors');
-    elements.colorPalette = document.getElementById('colorPalette');
+    // Fly mode
+    moveForward: false,
+    moveBackward: false,
+    moveLeft: false,
+    moveRight: false,
+    moveUp: false,
+    moveDown: false,
+    sprint: false,
+
+    // Camera
+    yaw: 0,
+    pitch: 0
+};
+
+// ============================================================================
+// Three.js Setup
+// ============================================================================
+
+let scene, camera, renderer, controls;
+let raycaster, mouse;
+let hexGeometry, groundMesh;
+let blockMeshes = new Map();
+let highlightMesh;
+let audio;
+
+function init() {
+    // Scene
+    scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x1a1a2e);
+    scene.fog = new THREE.Fog(0x1a1a2e, 30, 80);
+
+    // Camera
+    camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 1000);
+    camera.position.set(15, 20, 15);
+    camera.lookAt(0, 0, 0);
+
+    // Renderer
+    renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    document.getElementById('canvas-container').appendChild(renderer.domElement);
+
+    // Orbit Controls
+    controls = new THREE.OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true;
+    controls.dampingFactor = 0.05;
+    controls.maxPolarAngle = Math.PI / 2.1;
+    controls.minDistance = 5;
+    controls.maxDistance = 50;
+    controls.target.set(0, 0, 0);
+
+    // Lighting
+    const ambientLight = new THREE.AmbientLight(0x404060, 0.5);
+    scene.add(ambientLight);
+
+    const sunLight = new THREE.DirectionalLight(0xffffff, 1);
+    sunLight.position.set(20, 40, 20);
+    sunLight.castShadow = true;
+    sunLight.shadow.mapSize.width = 2048;
+    sunLight.shadow.mapSize.height = 2048;
+    sunLight.shadow.camera.near = 1;
+    sunLight.shadow.camera.far = 100;
+    sunLight.shadow.camera.left = -30;
+    sunLight.shadow.camera.right = 30;
+    sunLight.shadow.camera.top = 30;
+    sunLight.shadow.camera.bottom = -30;
+    scene.add(sunLight);
+
+    const fillLight = new THREE.DirectionalLight(0x6366f1, 0.3);
+    fillLight.position.set(-10, 10, -10);
+    scene.add(fillLight);
+
+    // Raycaster
+    raycaster = new THREE.Raycaster();
+    mouse = new THREE.Vector2();
+
+    // Create hex geometry
+    createHexGeometry();
+
+    // Create ground
+    createGround();
+
+    // Create highlight mesh
+    createHighlight();
+
+    // Initialize audio
+    audio = new AudioSystem();
+
+    // Create starter blocks
+    createStarterBlocks();
+
+    // Events
+    setupEventListeners();
+
+    // UI
+    setupUI();
+
+    // Start render loop
+    animate();
+}
+
+// ============================================================================
+// Geometry Creation
+// ============================================================================
+
+function createHexGeometry() {
+    // Create a hexagonal prism geometry
+    const shape = new THREE.Shape();
+    const sides = 6;
+    const radius = CONFIG.hexRadius;
+
+    for (let i = 0; i < sides; i++) {
+        const angle = (i / sides) * Math.PI * 2 - Math.PI / 2;
+        const x = Math.cos(angle) * radius;
+        const y = Math.sin(angle) * radius;
+        if (i === 0) {
+            shape.moveTo(x, y);
+        } else {
+            shape.lineTo(x, y);
+        }
+    }
+    shape.closePath();
+
+    const extrudeSettings = {
+        depth: CONFIG.hexHeight,
+        bevelEnabled: true,
+        bevelThickness: 0.05,
+        bevelSize: 0.05,
+        bevelSegments: 2
+    };
+
+    hexGeometry = new THREE.ExtrudeGeometry(shape, extrudeSettings);
+    hexGeometry.rotateX(-Math.PI / 2);
+    hexGeometry.translate(0, CONFIG.hexHeight / 2, 0);
+}
+
+function createGround() {
+    // Create a large hex grid ground plane
+    const groundGeo = new THREE.PlaneGeometry(100, 100);
+    const groundMat = new THREE.MeshStandardMaterial({
+        color: 0x1f2937,
+        roughness: 0.9,
+        metalness: 0.1
+    });
+    groundMesh = new THREE.Mesh(groundGeo, groundMat);
+    groundMesh.rotation.x = -Math.PI / 2;
+    groundMesh.position.y = -0.01;
+    groundMesh.receiveShadow = true;
+    scene.add(groundMesh);
+
+    // Add grid helper
+    const gridHelper = new THREE.GridHelper(50, 50, 0x3f3f5f, 0x2a2a4a);
+    gridHelper.position.y = 0;
+    scene.add(gridHelper);
+}
+
+function createHighlight() {
+    const highlightGeo = hexGeometry.clone();
+    const highlightMat = new THREE.MeshBasicMaterial({
+        color: 0xffffff,
+        transparent: true,
+        opacity: 0.3,
+        side: THREE.DoubleSide
+    });
+    highlightMesh = new THREE.Mesh(highlightGeo, highlightMat);
+    highlightMesh.visible = false;
+    scene.add(highlightMesh);
+}
+
+function createStarterBlocks() {
+    // Create a small starter platform
+    const positions = [
+        [0, 0, 0], [1, 0, 0], [-1, 0, 0], [0, 0, 1], [0, 0, -1],
+        [1, 0, 1], [-1, 0, -1], [1, 0, -1], [-1, 0, 1]
+    ];
+
+    positions.forEach(([x, y, z]) => {
+        addBlock(x, y, z, 0); // Stone
+    });
+
+    saveState();
+}
+
+// ============================================================================
+// Block Management
+// ============================================================================
+
+function hexToWorld(q, r) {
+    // Convert hex coordinates to world position (pointy-top orientation)
+    const x = CONFIG.hexRadius * Math.sqrt(3) * (q + r / 2);
+    const z = CONFIG.hexRadius * 1.5 * r;
+    return { x, z };
+}
+
+function worldToHex(x, z) {
+    // Convert world position to hex coordinates
+    const q = (Math.sqrt(3) / 3 * x - 1 / 3 * z) / CONFIG.hexRadius;
+    const r = (2 / 3 * z) / CONFIG.hexRadius;
+    return { q: Math.round(q), r: Math.round(r) };
+}
+
+function getBlockKey(x, y, z) {
+    return `${x},${y},${z}`;
+}
+
+function addBlock(q, r, y, materialIndex, animate = true) {
+    const key = getBlockKey(q, r, y);
+    if (STATE.blocks.has(key)) return false;
+
+    STATE.blocks.set(key, materialIndex);
+
+    // Create mesh
+    const material = MATERIALS[materialIndex];
+    const mat = new THREE.MeshStandardMaterial({
+        color: material.color,
+        roughness: 0.7,
+        metalness: 0.1
+    });
+
+    const mesh = new THREE.Mesh(hexGeometry, mat);
+    const worldPos = hexToWorld(q, r);
+    mesh.position.set(worldPos.x, y * CONFIG.hexHeight, worldPos.z);
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+    mesh.userData = { q, r, y, materialIndex };
+
+    // Animation
+    if (animate) {
+        mesh.scale.set(0.01, 0.01, 0.01);
+        animateScale(mesh, { x: 1, y: 1, z: 1 }, 200, 'bounceOut');
+        audio.playPlace();
+    }
+
+    scene.add(mesh);
+    blockMeshes.set(key, mesh);
+
+    return true;
+}
+
+function removeBlock(q, r, y, animate = true) {
+    const key = getBlockKey(q, r, y);
+    if (!STATE.blocks.has(key)) return false;
+
+    STATE.blocks.delete(key);
+    const mesh = blockMeshes.get(key);
+
+    if (mesh) {
+        if (animate) {
+            audio.playRemove();
+            animateScale(mesh, { x: 0.01, y: 0.01, z: 0.01 }, 150, 'easeIn', () => {
+                scene.remove(mesh);
+                mesh.geometry.dispose();
+                mesh.material.dispose();
+            });
+        } else {
+            scene.remove(mesh);
+            mesh.geometry.dispose();
+            mesh.material.dispose();
+        }
+        blockMeshes.delete(key);
+    }
+
+    return true;
+}
+
+function getTopBlockAt(q, r) {
+    for (let y = CONFIG.maxHeight; y >= 0; y--) {
+        if (STATE.blocks.has(getBlockKey(q, r, y))) {
+            return y;
+        }
+    }
+    return -1;
+}
+
+// ============================================================================
+// Animation System
+// ============================================================================
+
+const animations = [];
+
+function animateScale(mesh, target, duration, easing, onComplete) {
+    const start = { x: mesh.scale.x, y: mesh.scale.y, z: mesh.scale.z };
+    const startTime = performance.now();
+
+    animations.push({
+        mesh,
+        start,
+        target,
+        duration,
+        easing,
+        startTime,
+        onComplete
+    });
+}
+
+function updateAnimations() {
+    const now = performance.now();
+
+    for (let i = animations.length - 1; i >= 0; i--) {
+        const anim = animations[i];
+        const elapsed = now - anim.startTime;
+        let t = Math.min(elapsed / anim.duration, 1);
+
+        // Apply easing
+        if (anim.easing === 'bounceOut') {
+            t = bounceOut(t);
+        } else if (anim.easing === 'easeIn') {
+            t = t * t;
+        }
+
+        anim.mesh.scale.x = anim.start.x + (anim.target.x - anim.start.x) * t;
+        anim.mesh.scale.y = anim.start.y + (anim.target.y - anim.start.y) * t;
+        anim.mesh.scale.z = anim.start.z + (anim.target.z - anim.start.z) * t;
+
+        if (elapsed >= anim.duration) {
+            animations.splice(i, 1);
+            if (anim.onComplete) anim.onComplete();
+        }
+    }
+}
+
+function bounceOut(t) {
+    const n1 = 7.5625;
+    const d1 = 2.75;
+    if (t < 1 / d1) {
+        return n1 * t * t;
+    } else if (t < 2 / d1) {
+        return n1 * (t -= 1.5 / d1) * t + 0.75;
+    } else if (t < 2.5 / d1) {
+        return n1 * (t -= 2.25 / d1) * t + 0.9375;
+    } else {
+        return n1 * (t -= 2.625 / d1) * t + 0.984375;
+    }
 }
 
 // ============================================================================
@@ -104,348 +392,386 @@ function initElements() {
 
 class AudioSystem {
     constructor() {
-        this.audioContext = null;
-        this.enabled = true;
+        this.enabled = CONFIG.soundEnabled;
+        this.ctx = null;
     }
 
     init() {
-        if (this.audioContext) return;
-        try {
-            this.audioContext = new (window.AudioContext || window.webkitAudioContext)();
-        } catch (e) {
-            console.warn('Web Audio API not supported');
-        }
+        if (this.ctx) return;
+        this.ctx = new (window.AudioContext || window.webkitAudioContext)();
     }
 
-    playTone(frequency, duration = 0.05, type = 'sine', volume = 0.1) {
-        if (!this.enabled || !this.audioContext) return;
+    playTone(freq, duration, type = 'sine', volume = 0.1) {
+        if (!this.enabled) return;
+        this.init();
 
-        const oscillator = this.audioContext.createOscillator();
-        const gainNode = this.audioContext.createGain();
+        const osc = this.ctx.createOscillator();
+        const gain = this.ctx.createGain();
 
-        oscillator.connect(gainNode);
-        gainNode.connect(this.audioContext.destination);
+        osc.type = type;
+        osc.frequency.setValueAtTime(freq, this.ctx.currentTime);
 
-        oscillator.type = type;
-        oscillator.frequency.setValueAtTime(frequency, this.audioContext.currentTime);
+        gain.gain.setValueAtTime(volume, this.ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.001, this.ctx.currentTime + duration);
 
-        gainNode.gain.setValueAtTime(volume, this.audioContext.currentTime);
-        gainNode.gain.exponentialRampToValueAtTime(0.001, this.audioContext.currentTime + duration);
+        osc.connect(gain);
+        gain.connect(this.ctx.destination);
 
-        oscillator.start();
-        oscillator.stop(this.audioContext.currentTime + duration);
+        osc.start();
+        osc.stop(this.ctx.currentTime + duration);
     }
 
-    playDrawSound() {
-        const frequencies = [440, 523, 587, 659, 698, 784, 880];
-        const freq = frequencies[Math.floor(Math.random() * frequencies.length)];
-        this.playTone(freq, 0.08, 'sine', 0.08);
+    playPlace() {
+        const freq = 400 + Math.random() * 200;
+        this.playTone(freq, 0.1, 'sine', 0.15);
+        setTimeout(() => this.playTone(freq * 1.5, 0.08, 'sine', 0.1), 30);
     }
 
-    playFillSound() {
-        this.playTone(330, 0.15, 'triangle', 0.1);
-        setTimeout(() => this.playTone(440, 0.15, 'triangle', 0.08), 50);
+    playRemove() {
+        this.playTone(300, 0.15, 'sawtooth', 0.08);
     }
 
-    playEraseSound() {
-        this.playTone(220, 0.08, 'sawtooth', 0.05);
+    playSelect() {
+        this.playTone(800, 0.05, 'sine', 0.1);
     }
 
-    playUndoSound() {
-        this.playTone(392, 0.1, 'sine', 0.08);
-        setTimeout(() => this.playTone(330, 0.1, 'sine', 0.06), 80);
-    }
-
-    playRedoSound() {
-        this.playTone(330, 0.1, 'sine', 0.06);
-        setTimeout(() => this.playTone(392, 0.1, 'sine', 0.08), 80);
-    }
-
-    playClearSound() {
-        this.playTone(440, 0.2, 'square', 0.05);
-        setTimeout(() => this.playTone(220, 0.3, 'square', 0.04), 100);
-    }
-
-    playClickSound() {
-        this.playTone(800, 0.03, 'sine', 0.05);
+    playModeSwitch() {
+        this.playTone(600, 0.1, 'triangle', 0.12);
+        setTimeout(() => this.playTone(800, 0.1, 'triangle', 0.1), 80);
     }
 
     toggle() {
         this.enabled = !this.enabled;
+        if (this.enabled) this.playSelect();
         return this.enabled;
     }
 }
 
-const audio = new AudioSystem();
-
 // ============================================================================
-// Hexagon Grid System
+// Input Handling
 // ============================================================================
 
-class HexGrid {
-    constructor() {
-        this.hexWidth = 0;
-        this.hexHeight = 0;
-        this.verticalSpacing = 0;
-        this.horizontalSpacing = 0;
-    }
+function setupEventListeners() {
+    const canvas = renderer.domElement;
 
-    updateDimensions(hexSize) {
-        this.hexWidth = hexSize * 2;
-        this.hexHeight = Math.sqrt(3) * hexSize;
-        this.verticalSpacing = this.hexHeight;
-        this.horizontalSpacing = this.hexWidth * 0.75;
-    }
+    // Mouse
+    canvas.addEventListener('mousemove', onMouseMove);
+    canvas.addEventListener('mousedown', onMouseDown);
+    canvas.addEventListener('mouseup', onMouseUp);
+    canvas.addEventListener('contextmenu', e => e.preventDefault());
 
-    // Get hex corners for drawing
-    getHexCorners(centerX, centerY, size) {
-        const corners = [];
-        for (let i = 0; i < 6; i++) {
-            const angle = (Math.PI / 3) * i;
-            corners.push({
-                x: centerX + size * Math.cos(angle),
-                y: centerY + size * Math.sin(angle)
-            });
+    // Touch
+    canvas.addEventListener('touchstart', onTouchStart, { passive: false });
+    canvas.addEventListener('touchmove', onTouchMove, { passive: false });
+    canvas.addEventListener('touchend', onTouchEnd);
+
+    // Keyboard
+    document.addEventListener('keydown', onKeyDown);
+    document.addEventListener('keyup', onKeyUp);
+
+    // Resize
+    window.addEventListener('resize', onResize);
+
+    // Pointer lock for fly mode
+    canvas.addEventListener('click', () => {
+        if (STATE.mode === 'fly') {
+            canvas.requestPointerLock();
         }
-        return corners;
-    }
+    });
 
-    // Convert pixel coordinates to hex grid coordinates
-    pixelToHex(x, y, hexSize, offset) {
-        const adjustedX = (x - offset.x) / STATE.zoom;
-        const adjustedY = (y - offset.y) / STATE.zoom;
-
-        // Approximate column
-        const col = Math.round(adjustedX / this.horizontalSpacing);
-
-        // Calculate row, accounting for staggered layout
-        const isOddCol = col % 2 !== 0;
-        const rowOffset = isOddCol ? this.hexHeight / 2 : 0;
-        const row = Math.round((adjustedY - rowOffset) / this.verticalSpacing);
-
-        return { col, row };
-    }
-
-    // Convert hex grid coordinates to pixel center
-    hexToPixel(col, row) {
-        const x = col * this.horizontalSpacing;
-        const isOddCol = col % 2 !== 0;
-        const rowOffset = isOddCol ? this.hexHeight / 2 : 0;
-        const y = row * this.verticalSpacing + rowOffset;
-        return { x, y };
-    }
-
-    // Check if a point is inside a hexagon
-    pointInHex(px, py, centerX, centerY, size) {
-        const dx = Math.abs(px - centerX);
-        const dy = Math.abs(py - centerY);
-
-        if (dx > size || dy > this.hexHeight / 2) return false;
-
-        return size * this.hexHeight / 2 - size / 2 * dy - this.hexHeight / 2 * dx >= 0;
-    }
-
-    // Get neighboring hex cells for flood fill
-    getNeighbors(col, row) {
-        const isOddCol = col % 2 !== 0;
-        const neighbors = [
-            { col: col + 1, row: isOddCol ? row : row - 1 },
-            { col: col + 1, row: isOddCol ? row + 1 : row },
-            { col: col - 1, row: isOddCol ? row : row - 1 },
-            { col: col - 1, row: isOddCol ? row + 1 : row },
-            { col: col, row: row - 1 },
-            { col: col, row: row + 1 }
-        ];
-        return neighbors.filter(n =>
-            n.col >= 0 && n.col < CONFIG.gridSize &&
-            n.row >= 0 && n.row < CONFIG.gridSize
-        );
-    }
-}
-
-const hexGrid = new HexGrid();
-
-// ============================================================================
-// Canvas Rendering
-// ============================================================================
-
-function resizeCanvas() {
-    const container = elements.canvasContainer;
-    const rect = container.getBoundingClientRect();
-
-    // Set canvas size to match container
-    elements.canvas.width = rect.width * window.devicePixelRatio;
-    elements.canvas.height = rect.height * window.devicePixelRatio;
-    elements.canvas.style.width = rect.width + 'px';
-    elements.canvas.style.height = rect.height + 'px';
-
-    // Scale context for high DPI displays
-    elements.ctx.scale(window.devicePixelRatio, window.devicePixelRatio);
-
-    // Center the grid
-    const gridWidth = CONFIG.gridSize * hexGrid.horizontalSpacing;
-    const gridHeight = CONFIG.gridSize * hexGrid.verticalSpacing + hexGrid.hexHeight / 2;
-
-    STATE.panOffset.x = (rect.width - gridWidth * STATE.zoom) / 2;
-    STATE.panOffset.y = (rect.height - gridHeight * STATE.zoom) / 2;
-
-    render();
-}
-
-function render() {
-    const ctx = elements.ctx;
-    const canvas = elements.canvas;
-    const width = canvas.width / window.devicePixelRatio;
-    const height = canvas.height / window.devicePixelRatio;
-
-    // Clear canvas
-    ctx.fillStyle = CONFIG.backgroundColor;
-    ctx.fillRect(0, 0, width, height);
-
-    // Apply transformations
-    ctx.save();
-    ctx.translate(STATE.panOffset.x, STATE.panOffset.y);
-    ctx.scale(STATE.zoom, STATE.zoom);
-
-    // Draw grid
-    for (let col = 0; col < CONFIG.gridSize; col++) {
-        for (let row = 0; row < CONFIG.gridSize; row++) {
-            const { x, y } = hexGrid.hexToPixel(col, row);
-            const key = `${col},${row}`;
-            const color = STATE.hexCells.get(key);
-
-            drawHex(ctx, x, y, CONFIG.hexSize, color, CONFIG.showGridLines);
+    document.addEventListener('pointerlockchange', () => {
+        if (document.pointerLockElement !== canvas && STATE.mode === 'fly') {
+            setMode('orbit');
         }
-    }
-
-    // Draw hover highlight
-    if (STATE.hoveredHex && !STATE.isPanning) {
-        const { x, y } = hexGrid.hexToPixel(STATE.hoveredHex.col, STATE.hoveredHex.row);
-        drawHexHighlight(ctx, x, y, CONFIG.hexSize);
-    }
-
-    ctx.restore();
+    });
 }
 
-function drawHex(ctx, centerX, centerY, size, fillColor, showOutline) {
-    const corners = hexGrid.getHexCorners(centerX, centerY, size);
+function onMouseMove(event) {
+    // Update mouse position
+    mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+    mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
 
-    ctx.beginPath();
-    ctx.moveTo(corners[0].x, corners[0].y);
-    for (let i = 1; i < 6; i++) {
-        ctx.lineTo(corners[i].x, corners[i].y);
-    }
-    ctx.closePath();
-
-    if (fillColor) {
-        ctx.fillStyle = fillColor;
-        ctx.fill();
+    // Fly mode look
+    if (STATE.mode === 'fly' && document.pointerLockElement) {
+        STATE.yaw -= event.movementX * 0.002;
+        STATE.pitch -= event.movementY * 0.002;
+        STATE.pitch = Math.max(-Math.PI / 2 + 0.1, Math.min(Math.PI / 2 - 0.1, STATE.pitch));
     }
 
-    if (showOutline) {
-        ctx.strokeStyle = CONFIG.gridLineColor;
-        ctx.lineWidth = 1 / STATE.zoom;
-        ctx.stroke();
+    // Update raycast
+    updateRaycast();
+}
+
+function onMouseDown(event) {
+    if (STATE.mode === 'fly' && !document.pointerLockElement) return;
+
+    audio.init();
+
+    if (event.button === 0) { // Left click - place
+        STATE.isPlacing = true;
+        placeBlock();
+    } else if (event.button === 2) { // Right click - remove
+        removeBlockAtCursor();
     }
 }
 
-function drawHexHighlight(ctx, centerX, centerY, size) {
-    const corners = hexGrid.getHexCorners(centerX, centerY, size * 0.95);
-
-    ctx.beginPath();
-    ctx.moveTo(corners[0].x, corners[0].y);
-    for (let i = 1; i < 6; i++) {
-        ctx.lineTo(corners[i].x, corners[i].y);
+function onMouseUp(event) {
+    if (event.button === 0) {
+        STATE.isPlacing = false;
     }
-    ctx.closePath();
-
-    ctx.strokeStyle = STATE.currentColor;
-    ctx.lineWidth = 3 / STATE.zoom;
-    ctx.globalAlpha = 0.7;
-    ctx.stroke();
-    ctx.globalAlpha = 1;
 }
 
-// ============================================================================
-// Drawing Tools
-// ============================================================================
+function onTouchStart(event) {
+    event.preventDefault();
+    audio.init();
 
-function getCanvasCoordinates(e) {
-    const rect = elements.canvas.getBoundingClientRect();
-    const x = (e.clientX || e.touches?.[0]?.clientX) - rect.left;
-    const y = (e.clientY || e.touches?.[0]?.clientY) - rect.top;
-    return { x, y };
+    if (event.touches.length === 1) {
+        const touch = event.touches[0];
+        mouse.x = (touch.clientX / window.innerWidth) * 2 - 1;
+        mouse.y = -(touch.clientY / window.innerHeight) * 2 + 1;
+        updateRaycast();
+    }
 }
 
-function drawAtPosition(x, y) {
-    const hex = hexGrid.pixelToHex(x, y, CONFIG.hexSize, STATE.panOffset);
-
-    if (hex.col < 0 || hex.col >= CONFIG.gridSize ||
-        hex.row < 0 || hex.row >= CONFIG.gridSize) {
-        return;
+function onTouchMove(event) {
+    if (event.touches.length === 1) {
+        const touch = event.touches[0];
+        mouse.x = (touch.clientX / window.innerWidth) * 2 - 1;
+        mouse.y = -(touch.clientY / window.innerHeight) * 2 + 1;
+        updateRaycast();
     }
+}
 
-    const key = `${hex.col},${hex.row}`;
-    const currentCellColor = STATE.hexCells.get(key);
+function onTouchEnd(event) {
+    if (event.changedTouches.length === 1) {
+        placeBlock();
+    }
+}
 
-    switch (STATE.currentTool) {
-        case 'draw':
-            if (currentCellColor !== STATE.currentColor) {
-                STATE.hexCells.set(key, STATE.currentColor);
-                audio.playDrawSound();
-                createRipple(x, y);
+function onKeyDown(event) {
+    switch (event.code) {
+        case 'KeyW': STATE.moveForward = true; break;
+        case 'KeyS': STATE.moveBackward = true; break;
+        case 'KeyA': STATE.moveLeft = true; break;
+        case 'KeyD': STATE.moveRight = true; break;
+        case 'Space': STATE.moveUp = true; event.preventDefault(); break;
+        case 'ShiftLeft': STATE.moveDown = true; break;
+        case 'ControlLeft': STATE.sprint = true; break;
+
+        case 'KeyF':
+            toggleMode();
+            break;
+
+        case 'KeyM':
+            const enabled = audio.toggle();
+            updateSoundButton(enabled);
+            break;
+
+        case 'KeyQ':
+            STATE.brushSize = Math.max(1, STATE.brushSize - 1);
+            updateBrushDisplay();
+            audio.playSelect();
+            break;
+
+        case 'KeyE':
+            STATE.brushSize = Math.min(5, STATE.brushSize + 1);
+            updateBrushDisplay();
+            audio.playSelect();
+            break;
+
+        case 'KeyZ':
+            if (event.ctrlKey || event.metaKey) {
+                undo();
+                event.preventDefault();
             }
             break;
-        case 'erase':
-            if (STATE.hexCells.has(key)) {
-                STATE.hexCells.delete(key);
-                audio.playEraseSound();
+
+        case 'KeyY':
+            if (event.ctrlKey || event.metaKey) {
+                redo();
+                event.preventDefault();
             }
             break;
-        case 'fill':
-            floodFill(hex.col, hex.row, currentCellColor, STATE.currentColor);
+
+        // Number keys for material selection
+        case 'Digit1': case 'Digit2': case 'Digit3': case 'Digit4':
+        case 'Digit5': case 'Digit6': case 'Digit7': case 'Digit8':
+        case 'Digit9': case 'Digit0':
+            const num = event.code === 'Digit0' ? 9 : parseInt(event.code.slice(-1)) - 1;
+            if (num < MATERIALS.length) {
+                selectMaterial(num);
+            }
             break;
     }
-
-    render();
 }
 
-function floodFill(startCol, startRow, targetColor, fillColor) {
-    if (targetColor === fillColor) return;
+function onKeyUp(event) {
+    switch (event.code) {
+        case 'KeyW': STATE.moveForward = false; break;
+        case 'KeyS': STATE.moveBackward = false; break;
+        case 'KeyA': STATE.moveLeft = false; break;
+        case 'KeyD': STATE.moveRight = false; break;
+        case 'Space': STATE.moveUp = false; break;
+        case 'ShiftLeft': STATE.moveDown = false; break;
+        case 'ControlLeft': STATE.sprint = false; break;
+    }
+}
 
-    const visited = new Set();
-    const stack = [{ col: startCol, row: startRow }];
-    let filled = 0;
+function onResize() {
+    camera.aspect = window.innerWidth / window.innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(window.innerWidth, window.innerHeight);
+}
 
-    while (stack.length > 0 && filled < 1000) {
-        const { col, row } = stack.pop();
-        const key = `${col},${row}`;
+// ============================================================================
+// Game Logic
+// ============================================================================
 
-        if (visited.has(key)) continue;
-        visited.add(key);
+function updateRaycast() {
+    raycaster.setFromCamera(mouse, camera);
 
-        const cellColor = STATE.hexCells.get(key);
-        if (cellColor !== targetColor) continue;
+    // Get all block meshes
+    const meshes = Array.from(blockMeshes.values());
+    meshes.push(groundMesh);
 
-        if (fillColor) {
-            STATE.hexCells.set(key, fillColor);
+    const intersects = raycaster.intersectObjects(meshes);
+
+    if (intersects.length > 0) {
+        const hit = intersects[0];
+
+        if (hit.object === groundMesh) {
+            // Hit ground - show placement position
+            const hex = worldToHex(hit.point.x, hit.point.z);
+            const worldPos = hexToWorld(hex.q, hex.r);
+            highlightMesh.position.set(worldPos.x, 0, worldPos.z);
+            highlightMesh.visible = true;
+            STATE.hoveredBlock = { q: hex.q, r: hex.r, y: -1 };
+            STATE.hoveredFace = 'top';
         } else {
-            STATE.hexCells.delete(key);
-        }
-        filled++;
+            // Hit block - show next position
+            const block = hit.object.userData;
+            const normal = hit.face.normal.clone();
+            hit.object.localToWorld(normal.add(hit.object.position)).sub(hit.object.position);
 
-        const neighbors = hexGrid.getNeighbors(col, row);
-        for (const neighbor of neighbors) {
-            const neighborKey = `${neighbor.col},${neighbor.row}`;
-            if (!visited.has(neighborKey)) {
-                stack.push(neighbor);
+            let newQ = block.q;
+            let newR = block.r;
+            let newY = block.y;
+
+            if (Math.abs(normal.y) > 0.5) {
+                newY = normal.y > 0 ? block.y + 1 : block.y - 1;
+            } else {
+                // Side placement - approximate hex neighbor
+                const angle = Math.atan2(normal.z, normal.x);
+                const dir = Math.round(angle / (Math.PI / 3));
+                const neighbors = [
+                    [1, 0], [0, 1], [-1, 1], [-1, 0], [0, -1], [1, -1]
+                ];
+                const idx = ((dir % 6) + 6) % 6;
+                newQ += neighbors[idx][0];
+                newR += neighbors[idx][1];
             }
+
+            const worldPos = hexToWorld(newQ, newR);
+            highlightMesh.position.set(worldPos.x, newY * CONFIG.hexHeight, worldPos.z);
+            highlightMesh.visible = true;
+            STATE.hoveredBlock = { q: newQ, r: newR, y: newY };
+            STATE.hoveredFace = normal.y > 0.5 ? 'top' : 'side';
+        }
+    } else {
+        highlightMesh.visible = false;
+        STATE.hoveredBlock = null;
+    }
+}
+
+function placeBlock() {
+    if (!STATE.hoveredBlock) return;
+
+    const { q, r, y } = STATE.hoveredBlock;
+    const placeY = y === -1 ? 0 : y;
+
+    if (placeY >= 0 && placeY < CONFIG.maxHeight) {
+        if (addBlock(q, r, placeY, STATE.currentMaterial)) {
+            saveState();
         }
     }
+}
 
-    if (filled > 0) {
-        audio.playFillSound();
+function removeBlockAtCursor() {
+    raycaster.setFromCamera(mouse, camera);
+    const meshes = Array.from(blockMeshes.values());
+    const intersects = raycaster.intersectObjects(meshes);
+
+    if (intersects.length > 0) {
+        const block = intersects[0].object.userData;
+        if (removeBlock(block.q, block.r, block.y)) {
+            saveState();
+        }
     }
+}
+
+function toggleMode() {
+    setMode(STATE.mode === 'orbit' ? 'fly' : 'orbit');
+}
+
+function setMode(mode) {
+    STATE.mode = mode;
+    audio.playModeSwitch();
+
+    if (mode === 'orbit') {
+        controls.enabled = true;
+        document.exitPointerLock();
+        document.getElementById('crosshair').style.display = 'none';
+        document.getElementById('mode-indicator').textContent = 'Orbit Mode';
+    } else {
+        controls.enabled = false;
+        document.getElementById('crosshair').style.display = 'block';
+        document.getElementById('mode-indicator').textContent = 'Fly Mode (ESC to exit)';
+        // Store current camera orientation
+        const dir = new THREE.Vector3();
+        camera.getWorldDirection(dir);
+        STATE.yaw = Math.atan2(-dir.x, -dir.z);
+        STATE.pitch = Math.asin(dir.y);
+    }
+
+    updateModeButton();
+}
+
+function updateFlyMovement() {
+    if (STATE.mode !== 'fly') return;
+
+    const speed = CONFIG.flySpeed * (STATE.sprint ? CONFIG.sprintMultiplier : 1);
+
+    // Direction vectors
+    const forward = new THREE.Vector3(
+        -Math.sin(STATE.yaw) * Math.cos(STATE.pitch),
+        Math.sin(STATE.pitch),
+        -Math.cos(STATE.yaw) * Math.cos(STATE.pitch)
+    );
+
+    const right = new THREE.Vector3(
+        Math.cos(STATE.yaw),
+        0,
+        -Math.sin(STATE.yaw)
+    );
+
+    const velocity = new THREE.Vector3();
+
+    if (STATE.moveForward) velocity.add(forward);
+    if (STATE.moveBackward) velocity.sub(forward);
+    if (STATE.moveRight) velocity.add(right);
+    if (STATE.moveLeft) velocity.sub(right);
+    if (STATE.moveUp) velocity.y += 1;
+    if (STATE.moveDown) velocity.y -= 1;
+
+    if (velocity.length() > 0) {
+        velocity.normalize().multiplyScalar(speed);
+        camera.position.add(velocity);
+    }
+
+    // Update camera look direction
+    camera.rotation.order = 'YXZ';
+    camera.rotation.y = STATE.yaw;
+    camera.rotation.x = STATE.pitch;
 }
 
 // ============================================================================
@@ -453,685 +779,151 @@ function floodFill(startCol, startRow, targetColor, fillColor) {
 // ============================================================================
 
 function saveState() {
-    // Remove any future states if we're not at the end
+    // Remove future states if we're not at the end
     if (STATE.historyIndex < STATE.history.length - 1) {
         STATE.history = STATE.history.slice(0, STATE.historyIndex + 1);
     }
 
-    // Create snapshot of current state
-    const snapshot = new Map(STATE.hexCells);
+    // Save current state
+    const snapshot = new Map(STATE.blocks);
     STATE.history.push(snapshot);
+    STATE.historyIndex = STATE.history.length - 1;
 
-    // Limit history size
-    if (STATE.history.length > CONFIG.maxHistorySteps) {
+    // Limit history
+    if (STATE.history.length > 50) {
         STATE.history.shift();
-    } else {
-        STATE.historyIndex++;
+        STATE.historyIndex--;
     }
-
-    updateHistoryButtons();
 }
 
 function undo() {
-    if (STATE.historyIndex > 0) {
-        STATE.historyIndex--;
-        STATE.hexCells = new Map(STATE.history[STATE.historyIndex]);
-        audio.playUndoSound();
-        render();
-        updateHistoryButtons();
-    }
+    if (STATE.historyIndex <= 0) return;
+    STATE.historyIndex--;
+    loadState(STATE.history[STATE.historyIndex]);
+    audio.playSelect();
 }
 
 function redo() {
-    if (STATE.historyIndex < STATE.history.length - 1) {
-        STATE.historyIndex++;
-        STATE.hexCells = new Map(STATE.history[STATE.historyIndex]);
-        audio.playRedoSound();
-        render();
-        updateHistoryButtons();
-    }
+    if (STATE.historyIndex >= STATE.history.length - 1) return;
+    STATE.historyIndex++;
+    loadState(STATE.history[STATE.historyIndex]);
+    audio.playSelect();
 }
 
-function updateHistoryButtons() {
-    elements.undoBtn.disabled = STATE.historyIndex <= 0;
-    elements.redoBtn.disabled = STATE.historyIndex >= STATE.history.length - 1;
+function loadState(snapshot) {
+    // Remove all current blocks
+    for (const [key, mesh] of blockMeshes) {
+        scene.remove(mesh);
+        mesh.geometry.dispose();
+        mesh.material.dispose();
+    }
+    blockMeshes.clear();
+    STATE.blocks.clear();
+
+    // Add blocks from snapshot
+    for (const [key, materialIndex] of snapshot) {
+        const [q, r, y] = key.split(',').map(Number);
+        addBlock(q, r, y, materialIndex, false);
+    }
 }
 
 // ============================================================================
-// Zoom & Pan
+// UI
 // ============================================================================
 
-function setZoom(newZoom, centerX, centerY) {
-    const oldZoom = STATE.zoom;
-    STATE.zoom = Math.max(0.25, Math.min(4, newZoom));
-
-    // Adjust pan to zoom towards center point
-    if (centerX !== undefined && centerY !== undefined) {
-        const zoomFactor = STATE.zoom / oldZoom;
-        STATE.panOffset.x = centerX - (centerX - STATE.panOffset.x) * zoomFactor;
-        STATE.panOffset.y = centerY - (centerY - STATE.panOffset.y) * zoomFactor;
-    }
-
-    elements.zoomLevel.textContent = Math.round(STATE.zoom * 100) + '%';
-    render();
+function setupUI() {
+    createMaterialPalette();
+    updateBrushDisplay();
+    updateModeButton();
 }
 
-function resetView() {
-    STATE.zoom = 1;
-    resizeCanvas();
-    elements.zoomLevel.textContent = '100%';
-}
+function createMaterialPalette() {
+    const palette = document.getElementById('material-palette');
+    if (!palette) return;
 
-// ============================================================================
-// Color Management
-// ============================================================================
+    palette.innerHTML = '';
 
-function setColor(color) {
-    STATE.currentColor = color;
-    elements.currentColor.style.backgroundColor = color;
-    elements.colorPicker.value = color;
-    elements.mobileColorPicker.value = color;
-    if (elements.mobileColorPreview) {
-        elements.mobileColorPreview.style.backgroundColor = color;
-    }
+    MATERIALS.forEach((mat, index) => {
+        const btn = document.createElement('button');
+        btn.className = 'material-btn' + (index === STATE.currentMaterial ? ' active' : '');
+        btn.style.background = mat.color;
+        btn.title = `${mat.name} (${index + 1})${mat.behavior ? ' - ' + mat.behavior : ''}`;
+        btn.onclick = () => selectMaterial(index);
 
-    // Update preset selection
-    document.querySelectorAll('.preset-color').forEach(el => {
-        el.classList.toggle('selected', el.dataset.color === color);
-    });
+        // Add number indicator
+        if (index < 10) {
+            const num = document.createElement('span');
+            num.className = 'material-num';
+            num.textContent = index + 1;
+            btn.appendChild(num);
+        }
 
-    addRecentColor(color);
-}
-
-function addRecentColor(color) {
-    // Remove if already exists
-    const index = STATE.recentColors.indexOf(color);
-    if (index > -1) {
-        STATE.recentColors.splice(index, 1);
-    }
-
-    // Add to front
-    STATE.recentColors.unshift(color);
-
-    // Limit to 8 recent colors
-    if (STATE.recentColors.length > 8) {
-        STATE.recentColors.pop();
-    }
-
-    renderRecentColors();
-}
-
-function renderRecentColors() {
-    elements.recentColors.innerHTML = '';
-    STATE.recentColors.forEach(color => {
-        const div = document.createElement('div');
-        div.className = 'recent-color';
-        div.style.backgroundColor = color;
-        div.dataset.color = color;
-        div.addEventListener('click', () => {
-            setColor(color);
-            audio.playClickSound();
-        });
-        elements.recentColors.appendChild(div);
+        palette.appendChild(btn);
     });
 }
 
-function renderPresetColors() {
-    const createColorGrid = (container) => {
-        container.innerHTML = '';
-        PRESET_COLORS.forEach(color => {
-            const div = document.createElement('div');
-            div.className = 'preset-color';
-            div.style.backgroundColor = color;
-            div.dataset.color = color;
-            if (color === STATE.currentColor) {
-                div.classList.add('selected');
-            }
-            div.addEventListener('click', () => {
-                setColor(color);
-                audio.playClickSound();
-            });
-            container.appendChild(div);
-        });
-    };
+function selectMaterial(index) {
+    STATE.currentMaterial = index;
+    audio.playSelect();
 
-    createColorGrid(elements.presetColors);
-    createColorGrid(elements.mobilePresetColors);
+    // Update UI
+    document.querySelectorAll('.material-btn').forEach((btn, i) => {
+        btn.classList.toggle('active', i === index);
+    });
+
+    document.getElementById('current-material').textContent = MATERIALS[index].name;
+    document.getElementById('current-material').style.color = MATERIALS[index].color;
 }
 
-// ============================================================================
-// Visual Effects
-// ============================================================================
-
-function createRipple(x, y) {
-    const ripple = document.createElement('div');
-    ripple.className = 'draw-ripple';
-    ripple.style.left = x + 'px';
-    ripple.style.top = y + 'px';
-    ripple.style.width = '20px';
-    ripple.style.height = '20px';
-    ripple.style.marginLeft = '-10px';
-    ripple.style.marginTop = '-10px';
-    ripple.style.backgroundColor = STATE.currentColor;
-    elements.canvasContainer.appendChild(ripple);
-
-    setTimeout(() => ripple.remove(), 400);
+function updateBrushDisplay() {
+    const el = document.getElementById('brush-size');
+    if (el) el.textContent = STATE.brushSize;
 }
 
-function showToast(message, type = 'info') {
-    const toast = document.createElement('div');
-    toast.className = `toast ${type}`;
-    toast.textContent = message;
-    elements.toastContainer.appendChild(toast);
-
-    setTimeout(() => {
-        toast.classList.add('hiding');
-        setTimeout(() => toast.remove(), 300);
-    }, 3000);
-}
-
-// ============================================================================
-// File Operations
-// ============================================================================
-
-function downloadArt() {
-    // Create a new canvas for export
-    const exportCanvas = document.createElement('canvas');
-    const exportCtx = exportCanvas.getContext('2d');
-
-    // Calculate dimensions
-    const padding = 20;
-    const gridWidth = CONFIG.gridSize * hexGrid.horizontalSpacing + CONFIG.hexSize;
-    const gridHeight = CONFIG.gridSize * hexGrid.verticalSpacing + hexGrid.hexHeight;
-
-    exportCanvas.width = gridWidth + padding * 2;
-    exportCanvas.height = gridHeight + padding * 2;
-
-    // Draw background
-    exportCtx.fillStyle = CONFIG.backgroundColor;
-    exportCtx.fillRect(0, 0, exportCanvas.width, exportCanvas.height);
-
-    // Draw hexes
-    exportCtx.translate(padding + CONFIG.hexSize, padding + hexGrid.hexHeight / 2);
-
-    for (let col = 0; col < CONFIG.gridSize; col++) {
-        for (let row = 0; row < CONFIG.gridSize; row++) {
-            const { x, y } = hexGrid.hexToPixel(col, row);
-            const key = `${col},${row}`;
-            const color = STATE.hexCells.get(key);
-
-            if (color) {
-                const corners = hexGrid.getHexCorners(x, y, CONFIG.hexSize);
-                exportCtx.beginPath();
-                exportCtx.moveTo(corners[0].x, corners[0].y);
-                for (let i = 1; i < 6; i++) {
-                    exportCtx.lineTo(corners[i].x, corners[i].y);
-                }
-                exportCtx.closePath();
-                exportCtx.fillStyle = color;
-                exportCtx.fill();
-            }
-        }
-    }
-
-    // Download
-    const link = document.createElement('a');
-    link.download = `hexcraft-${Date.now()}.png`;
-    link.href = exportCanvas.toDataURL('image/png');
-    link.click();
-
-    showToast('Art downloaded!', 'success');
-    audio.playClickSound();
-}
-
-function clearCanvas() {
-    if (STATE.hexCells.size === 0) return;
-
-    saveState();
-    STATE.hexCells.clear();
-    audio.playClearSound();
-    render();
-    showToast('Canvas cleared', 'info');
-}
-
-// ============================================================================
-// Settings
-// ============================================================================
-
-function openSettings() {
-    elements.settingsModal.classList.add('active');
-    elements.gridSizeSlider.value = CONFIG.gridSize;
-    elements.gridSizeValue.textContent = CONFIG.gridSize;
-    elements.hexSizeSlider.value = CONFIG.hexSize;
-    elements.hexSizeValue.textContent = CONFIG.hexSize + 'px';
-    elements.showGridLines.checked = CONFIG.showGridLines;
-    elements.bgColorPicker.value = CONFIG.backgroundColor;
-}
-
-function closeSettings() {
-    elements.settingsModal.classList.remove('active');
-}
-
-function applySettings() {
-    CONFIG.gridSize = parseInt(elements.gridSizeSlider.value);
-    CONFIG.hexSize = parseInt(elements.hexSizeSlider.value);
-    CONFIG.showGridLines = elements.showGridLines.checked;
-    CONFIG.backgroundColor = elements.bgColorPicker.value;
-
-    hexGrid.updateDimensions(CONFIG.hexSize);
-    resizeCanvas();
-    closeSettings();
-    showToast('Settings applied', 'success');
-}
-
-// ============================================================================
-// Touch Gestures
-// ============================================================================
-
-let touchStartTime = 0;
-let touchStartPosition = null;
-
-function handleTouchStart(e) {
-    if (e.touches.length === 2) {
-        // Pinch gesture start
-        STATE.isPanning = true;
-        STATE.pinchDistance = getTouchDistance(e.touches);
-        STATE.lastPanPosition = getTouchCenter(e.touches);
-    } else if (e.touches.length === 1) {
-        touchStartTime = Date.now();
-        touchStartPosition = { x: e.touches[0].clientX, y: e.touches[0].clientY };
-
-        const { x, y } = getCanvasCoordinates(e);
-        STATE.isDrawing = true;
-        saveState();
-        drawAtPosition(x, y);
+function updateModeButton() {
+    const btn = document.getElementById('mode-btn');
+    if (btn) {
+        btn.textContent = STATE.mode === 'orbit' ? 'Fly (F)' : 'Orbit (F)';
     }
 }
 
-function handleTouchMove(e) {
-    e.preventDefault();
-
-    if (e.touches.length === 2) {
-        // Pinch zoom
-        const newDistance = getTouchDistance(e.touches);
-        const center = getTouchCenter(e.touches);
-
-        const zoomDelta = newDistance / STATE.pinchDistance;
-        setZoom(STATE.zoom * zoomDelta, center.x, center.y);
-
-        // Pan
-        const dx = center.x - STATE.lastPanPosition.x;
-        const dy = center.y - STATE.lastPanPosition.y;
-        STATE.panOffset.x += dx;
-        STATE.panOffset.y += dy;
-
-        STATE.pinchDistance = newDistance;
-        STATE.lastPanPosition = center;
-        render();
-    } else if (e.touches.length === 1 && STATE.isDrawing && !STATE.isPanning) {
-        const { x, y } = getCanvasCoordinates(e);
-
-        // Check for scroll intent (fast vertical movement)
-        if (touchStartPosition) {
-            const dy = Math.abs(e.touches[0].clientY - touchStartPosition.y);
-            const dx = Math.abs(e.touches[0].clientX - touchStartPosition.x);
-            const elapsed = Date.now() - touchStartTime;
-
-            if (elapsed < 200 && dy > 30 && dy > dx * 2) {
-                STATE.isDrawing = false;
-                STATE.isPanning = true;
-                return;
-            }
-        }
-
-        drawAtPosition(x, y);
-        updateHoveredHex(x, y);
+function updateSoundButton(enabled) {
+    const btn = document.getElementById('sound-btn');
+    if (btn) {
+        btn.innerHTML = enabled ?
+            '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02z"/></svg>' :
+            '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M16.5 12c0-1.77-1.02-3.29-2.5-4.03v2.21l2.45 2.45c.03-.2.05-.41.05-.63zm2.5 0c0 .94-.2 1.82-.54 2.64l1.51 1.51C20.63 14.91 21 13.5 21 12c0-4.28-2.99-7.86-7-8.77v2.06c2.89.86 5 3.54 5 6.71zM4.27 3L3 4.27 7.73 9H3v6h4l5 5v-6.73l4.25 4.25c-.67.52-1.42.93-2.25 1.18v2.06c1.38-.31 2.63-.95 3.69-1.81L19.73 21 21 19.73l-9-9L4.27 3zM12 4L9.91 6.09 12 8.18V4z"/></svg>';
     }
-}
-
-function handleTouchEnd(e) {
-    if (e.touches.length === 0) {
-        STATE.isDrawing = false;
-        STATE.isPanning = false;
-        STATE.hoveredHex = null;
-        touchStartPosition = null;
-        render();
-    } else if (e.touches.length === 1) {
-        STATE.isPanning = false;
-    }
-}
-
-function getTouchDistance(touches) {
-    const dx = touches[0].clientX - touches[1].clientX;
-    const dy = touches[0].clientY - touches[1].clientY;
-    return Math.sqrt(dx * dx + dy * dy);
-}
-
-function getTouchCenter(touches) {
-    return {
-        x: (touches[0].clientX + touches[1].clientX) / 2,
-        y: (touches[0].clientY + touches[1].clientY) / 2
-    };
 }
 
 // ============================================================================
-// Mouse Events
+// Main Loop
 // ============================================================================
 
-function handleMouseDown(e) {
-    if (e.button === 1 || (e.button === 0 && e.altKey)) {
-        // Middle click or Alt+click for panning
-        STATE.isPanning = true;
-        STATE.lastPanPosition = { x: e.clientX, y: e.clientY };
-        elements.canvas.style.cursor = 'grabbing';
-    } else if (e.button === 0) {
-        const { x, y } = getCanvasCoordinates(e);
-        STATE.isDrawing = true;
-        saveState();
-        drawAtPosition(x, y);
-    }
-}
+function animate() {
+    requestAnimationFrame(animate);
 
-function handleMouseMove(e) {
-    const { x, y } = getCanvasCoordinates(e);
-
-    if (STATE.isPanning) {
-        const dx = e.clientX - STATE.lastPanPosition.x;
-        const dy = e.clientY - STATE.lastPanPosition.y;
-        STATE.panOffset.x += dx;
-        STATE.panOffset.y += dy;
-        STATE.lastPanPosition = { x: e.clientX, y: e.clientY };
-        render();
-    } else if (STATE.isDrawing) {
-        drawAtPosition(x, y);
-        updateHoveredHex(x, y);
+    // Update controls
+    if (STATE.mode === 'orbit') {
+        controls.update();
     } else {
-        updateHoveredHex(x, y);
-    }
-}
-
-function handleMouseUp() {
-    STATE.isDrawing = false;
-    STATE.isPanning = false;
-    elements.canvas.style.cursor = 'crosshair';
-}
-
-function handleWheel(e) {
-    e.preventDefault();
-    const { x, y } = getCanvasCoordinates(e);
-    const zoomDelta = e.deltaY > 0 ? 0.9 : 1.1;
-    setZoom(STATE.zoom * zoomDelta, x, y);
-}
-
-function updateHoveredHex(x, y) {
-    const hex = hexGrid.pixelToHex(x, y, CONFIG.hexSize, STATE.panOffset);
-
-    if (hex.col >= 0 && hex.col < CONFIG.gridSize &&
-        hex.row >= 0 && hex.row < CONFIG.gridSize) {
-        STATE.hoveredHex = hex;
-    } else {
-        STATE.hoveredHex = null;
+        updateFlyMovement();
     }
 
-    render();
+    // Update animations
+    updateAnimations();
+
+    // Render
+    renderer.render(scene, camera);
 }
 
 // ============================================================================
-// Tool Selection
+// Initialize
 // ============================================================================
 
-function selectTool(tool) {
-    STATE.currentTool = tool;
-
-    // Update desktop toolbar
-    document.querySelectorAll('.toolbar .tool-btn[data-tool]').forEach(btn => {
-        btn.classList.toggle('active', btn.dataset.tool === tool);
-    });
-
-    // Update mobile toolbar
-    document.querySelectorAll('.mobile-tool[data-tool]').forEach(btn => {
-        btn.classList.toggle('active', btn.dataset.tool === tool);
-    });
-
-    // Update mobile menu
-    document.querySelectorAll('.mobile-menu-item[data-tool]').forEach(btn => {
-        btn.classList.toggle('active', btn.dataset.tool === tool);
-    });
-
-    // Close mobile menu if open
-    elements.mobileMenuOverlay.classList.remove('active');
-
-    audio.playClickSound();
+// Wait for DOM and Three.js
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', init);
+} else {
+    init();
 }
-
-// ============================================================================
-// PWA Installation
-// ============================================================================
-
-let deferredPrompt = null;
-
-window.addEventListener('beforeinstallprompt', (e) => {
-    e.preventDefault();
-    deferredPrompt = e;
-
-    // Show install banner after a delay
-    setTimeout(() => {
-        if (!localStorage.getItem('installDismissed')) {
-            elements.installBanner.classList.add('show');
-        }
-    }, 5000);
-});
-
-function installPWA() {
-    if (deferredPrompt) {
-        deferredPrompt.prompt();
-        deferredPrompt.userChoice.then((choiceResult) => {
-            if (choiceResult.outcome === 'accepted') {
-                showToast('Thanks for installing!', 'success');
-            }
-            deferredPrompt = null;
-            elements.installBanner.classList.remove('show');
-        });
-    }
-}
-
-function dismissInstall() {
-    elements.installBanner.classList.remove('show');
-    localStorage.setItem('installDismissed', 'true');
-}
-
-// ============================================================================
-// Event Listeners
-// ============================================================================
-
-function initEventListeners() {
-    // Canvas events
-    elements.canvas.addEventListener('mousedown', handleMouseDown);
-    elements.canvas.addEventListener('mousemove', handleMouseMove);
-    elements.canvas.addEventListener('mouseup', handleMouseUp);
-    elements.canvas.addEventListener('mouseleave', () => {
-        STATE.hoveredHex = null;
-        handleMouseUp();
-        render();
-    });
-    elements.canvas.addEventListener('wheel', handleWheel, { passive: false });
-
-    // Touch events
-    elements.canvas.addEventListener('touchstart', handleTouchStart, { passive: false });
-    elements.canvas.addEventListener('touchmove', handleTouchMove, { passive: false });
-    elements.canvas.addEventListener('touchend', handleTouchEnd);
-    elements.canvas.addEventListener('touchcancel', handleTouchEnd);
-
-    // Tool selection
-    document.querySelectorAll('[data-tool]').forEach(btn => {
-        btn.addEventListener('click', () => selectTool(btn.dataset.tool));
-    });
-
-    // History buttons
-    elements.undoBtn.addEventListener('click', undo);
-    elements.redoBtn.addEventListener('click', redo);
-    elements.mobileUndo.addEventListener('click', undo);
-    elements.mobileRedo.addEventListener('click', redo);
-
-    // Clear and download
-    elements.clearBtn.addEventListener('click', clearCanvas);
-    elements.downloadBtn.addEventListener('click', downloadArt);
-    elements.mobileClear.addEventListener('click', clearCanvas);
-    elements.mobileDownload.addEventListener('click', downloadArt);
-
-    // Sound toggle
-    const toggleSound = () => {
-        const enabled = audio.toggle();
-        elements.soundToggle.classList.toggle('muted', !enabled);
-        elements.mobileSoundToggle.querySelector('span').textContent = enabled ? 'Sound On' : 'Sound Off';
-        audio.playClickSound();
-    };
-    elements.soundToggle.addEventListener('click', toggleSound);
-    elements.mobileSoundToggle.addEventListener('click', toggleSound);
-
-    // Zoom controls
-    elements.zoomIn.addEventListener('click', () => setZoom(STATE.zoom * 1.2));
-    elements.zoomOut.addEventListener('click', () => setZoom(STATE.zoom * 0.8));
-    elements.zoomReset.addEventListener('click', resetView);
-
-    // Color pickers
-    elements.colorPicker.addEventListener('input', (e) => setColor(e.target.value));
-    elements.mobileColorPicker.addEventListener('input', (e) => setColor(e.target.value));
-
-    // Settings
-    elements.settingsBtn.addEventListener('click', openSettings);
-    elements.closeSettings.addEventListener('click', closeSettings);
-    elements.applySettings.addEventListener('click', applySettings);
-    elements.settingsModal.addEventListener('click', (e) => {
-        if (e.target === elements.settingsModal) closeSettings();
-    });
-
-    // Settings sliders
-    elements.gridSizeSlider.addEventListener('input', (e) => {
-        elements.gridSizeValue.textContent = e.target.value;
-    });
-    elements.hexSizeSlider.addEventListener('input', (e) => {
-        elements.hexSizeValue.textContent = e.target.value + 'px';
-    });
-
-    // Mobile overlays
-    elements.mobileColorBtn.addEventListener('click', () => {
-        elements.mobileColorOverlay.classList.add('active');
-        audio.playClickSound();
-    });
-    elements.closeMobileColor.addEventListener('click', () => {
-        elements.mobileColorOverlay.classList.remove('active');
-    });
-    elements.mobileColorOverlay.addEventListener('click', (e) => {
-        if (e.target === elements.mobileColorOverlay) {
-            elements.mobileColorOverlay.classList.remove('active');
-        }
-    });
-
-    elements.mobileMenu.addEventListener('click', () => {
-        elements.mobileMenuOverlay.classList.add('active');
-        audio.playClickSound();
-    });
-    elements.mobileMenuOverlay.addEventListener('click', (e) => {
-        if (e.target === elements.mobileMenuOverlay) {
-            elements.mobileMenuOverlay.classList.remove('active');
-        }
-    });
-
-    // Sidebar collapse
-    elements.collapseColors.addEventListener('click', () => {
-        elements.colorPalette.classList.toggle('collapsed');
-    });
-
-    // PWA install
-    elements.installBtn.addEventListener('click', installPWA);
-    elements.dismissInstall.addEventListener('click', dismissInstall);
-
-    // Keyboard shortcuts
-    document.addEventListener('keydown', (e) => {
-        if (e.target.tagName === 'INPUT') return;
-
-        switch (e.key.toLowerCase()) {
-            case 'd':
-                selectTool('draw');
-                break;
-            case 'f':
-                selectTool('fill');
-                break;
-            case 'e':
-                selectTool('erase');
-                break;
-            case 'z':
-                if (e.ctrlKey || e.metaKey) {
-                    e.preventDefault();
-                    if (e.shiftKey) {
-                        redo();
-                    } else {
-                        undo();
-                    }
-                }
-                break;
-            case 'y':
-                if (e.ctrlKey || e.metaKey) {
-                    e.preventDefault();
-                    redo();
-                }
-                break;
-            case '+':
-            case '=':
-                if (e.ctrlKey || e.metaKey) {
-                    e.preventDefault();
-                    setZoom(STATE.zoom * 1.2);
-                }
-                break;
-            case '-':
-                if (e.ctrlKey || e.metaKey) {
-                    e.preventDefault();
-                    setZoom(STATE.zoom * 0.8);
-                }
-                break;
-            case '0':
-                if (e.ctrlKey || e.metaKey) {
-                    e.preventDefault();
-                    resetView();
-                }
-                break;
-        }
-    });
-
-    // Window resize
-    window.addEventListener('resize', resizeCanvas);
-
-    // Prevent context menu on canvas
-    elements.canvas.addEventListener('contextmenu', (e) => e.preventDefault());
-}
-
-// ============================================================================
-// Initialization
-// ============================================================================
-
-function init() {
-    initElements();
-    hexGrid.updateDimensions(CONFIG.hexSize);
-
-    // Set initial color
-    setColor(STATE.currentColor);
-    renderPresetColors();
-
-    // Initialize canvas
-    resizeCanvas();
-
-    // Save initial state
-    saveState();
-
-    // Initialize audio on first interaction
-    document.addEventListener('click', () => audio.init(), { once: true });
-    document.addEventListener('touchstart', () => audio.init(), { once: true });
-
-    initEventListeners();
-
-    console.log('HexCraft initialized!');
-}
-
-// Start the app
-document.addEventListener('DOMContentLoaded', init);
