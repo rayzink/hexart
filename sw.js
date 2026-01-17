@@ -3,7 +3,7 @@
  * Provides offline functionality and caching for the PWA
  */
 
-const CACHE_NAME = 'hexcraft-v1';
+const CACHE_NAME = 'hexcraft-v2-3d';
 const ASSETS_TO_CACHE = [
     './',
     './index.html',
@@ -12,6 +12,9 @@ const ASSETS_TO_CACHE = [
     './manifest.json',
     './icons/icon.svg'
 ];
+
+// Force update on version change
+const FORCE_UPDATE = true;
 
 // Install event - cache assets
 self.addEventListener('install', (event) => {
