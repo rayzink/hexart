@@ -1,0 +1,32 @@
+{
+  "name": "HexCraft - Interactive Hex Art Creator",
+  "short_name": "HexCraft",
+  "description": "Create beautiful hexagonal pixel art with touch-friendly controls, undo/redo, and more",
+  "start_url": "./",
+  "display": "standalone",
+  "background_color": "#0f0f23",
+  "theme_color": "#1a1a2e",
+  "orientation": "any",
+  "icons": [
+    {
+      "src": "icons/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "icons/icon.svg",
+      "sizes": "512x512",
+      "type": "image/svg+xml",
+      "purpose": "maskable"
+    }
+  ],
+  "categories": ["graphics", "creativity", "design"],
+  "shortcuts": [
+    {
+      "name": "New Canvas",
+      "url": "./?action=new",
+      "description": "Start with a fresh canvas"
+    }
+  ]
+}

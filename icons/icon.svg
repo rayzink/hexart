@@ -1,0 +1,57 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <defs>
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#1a1a2e"/>
+      <stop offset="100%" style="stop-color:#0f0f23"/>
+    </linearGradient>
+    <linearGradient id="hexGrad1" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#6366f1"/>
+      <stop offset="100%" style="stop-color:#8b5cf6"/>
+    </linearGradient>
+    <linearGradient id="hexGrad2" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#ec4899"/>
+      <stop offset="100%" style="stop-color:#f43f5e"/>
+    </linearGradient>
+    <linearGradient id="hexGrad3" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#22c55e"/>
+      <stop offset="100%" style="stop-color:#14b8a6"/>
+    </linearGradient>
+    <linearGradient id="hexGrad4" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#f59e0b"/>
+      <stop offset="100%" style="stop-color:#eab308"/>
+    </linearGradient>
+    <filter id="glow">
+      <feGaussianBlur stdDeviation="8" result="coloredBlur"/>
+      <feMerge>
+        <feMergeNode in="coloredBlur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+
+  <!-- Background -->
+  <rect width="512" height="512" rx="80" fill="url(#bgGrad)"/>
+
+  <!-- Hex pattern -->
+  <g filter="url(#glow)">
+    <!-- Center hex (main) -->
+    <polygon points="256,100 326,140 326,220 256,260 186,220 186,140" fill="url(#hexGrad1)" opacity="1"/>
+
+    <!-- Top left hex -->
+    <polygon points="186,180 256,220 256,300 186,340 116,300 116,220" fill="url(#hexGrad2)" opacity="0.9"/>
+
+    <!-- Top right hex -->
+    <polygon points="326,180 396,220 396,300 326,340 256,300 256,220" fill="url(#hexGrad3)" opacity="0.9"/>
+
+    <!-- Bottom hex -->
+    <polygon points="256,260 326,300 326,380 256,420 186,380 186,300" fill="url(#hexGrad4)" opacity="0.9"/>
+  </g>
+
+  <!-- Subtle grid lines -->
+  <g stroke="#ffffff" stroke-width="2" fill="none" opacity="0.3">
+    <polygon points="256,100 326,140 326,220 256,260 186,220 186,140"/>
+    <polygon points="186,180 256,220 256,300 186,340 116,300 116,220"/>
+    <polygon points="326,180 396,220 396,300 326,340 256,300 256,220"/>
+    <polygon points="256,260 326,300 326,380 256,420 186,380 186,300"/>
+  </g>
+</svg>
