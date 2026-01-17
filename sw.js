@@ -3,7 +3,7 @@
  * Provides offline functionality and caching for the PWA
  */
 
-const CACHE_NAME = 'hexcraft-v2-3d';
+const CACHE_NAME = 'hexcraft-v3-touch';
 const ASSETS_TO_CACHE = [
     './',
     './index.html',

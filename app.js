@@ -521,12 +521,19 @@ function onMouseUp(event) {
     }
 }
 
+let touchStartTime = 0;
+let touchStartPos = { x: 0, y: 0 };
+const TAP_THRESHOLD = 300; // ms
+const MOVE_THRESHOLD = 20; // pixels
+
 function onTouchStart(event) {
-    event.preventDefault();
     audio.init();
 
     if (event.touches.length === 1) {
         const touch = event.touches[0];
+        touchStartTime = Date.now();
+        touchStartPos = { x: touch.clientX, y: touch.clientY };
+
         mouse.x = (touch.clientX / window.innerWidth) * 2 - 1;
         mouse.y = -(touch.clientY / window.innerHeight) * 2 + 1;
         updateRaycast();
@@ -544,7 +551,23 @@ function onTouchMove(event) {
 
 function onTouchEnd(event) {
     if (event.changedTouches.length === 1) {
-        placeBlock();
+        const touch = event.changedTouches[0];
+        const elapsed = Date.now() - touchStartTime;
+        const dx = Math.abs(touch.clientX - touchStartPos.x);
+        const dy = Math.abs(touch.clientY - touchStartPos.y);
+
+        // Only place block on quick tap (not drag/orbit gesture)
+        if (elapsed < TAP_THRESHOLD && dx < MOVE_THRESHOLD && dy < MOVE_THRESHOLD) {
+            // Update mouse position from final touch position
+            mouse.x = (touch.clientX / window.innerWidth) * 2 - 1;
+            mouse.y = -(touch.clientY / window.innerHeight) * 2 + 1;
+            updateRaycast();
+
+            // Small delay to ensure raycast is updated
+            setTimeout(() => {
+                placeBlock();
+            }, 10);
+        }
     }
 }
 
