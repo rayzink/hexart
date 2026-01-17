@@ -113,19 +113,37 @@
                 <div class="mobile-material-preview"></div>
                 <span>Material</span>
             </button>
-            <button class="mobile-tool" id="mobile-mode">
-                <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 5.5L10 8H14L12 5.5M18 10L20.5 12L18 14V10M6 10V14L3.5 12L6 10M12 18.5L14 16H10L12 18.5M12 8C9.79 8 8 9.79 8 12S9.79 16 12 16 16 14.21 16 12 14.21 8 12 8Z"/></svg>
-                <span>Mode</span>
+            <button class="mobile-tool mobile-place-btn" id="mobile-place">
+                <svg viewBox="0 0 24 24" fill="currentColor"><path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/></svg>
+                <span>Place</span>
+            </button>
+            <button class="mobile-tool mobile-remove-btn" id="mobile-remove">
+                <svg viewBox="0 0 24 24" fill="currentColor"><path d="M19 13H5v-2h14v2z"/></svg>
+                <span>Remove</span>
             </button>
             <button class="mobile-tool" id="mobile-undo">
                 <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12.5 8c-2.65 0-5.05.99-6.9 2.6L2 7v9h9l-3.62-3.62c1.39-1.16 3.16-1.88 5.12-1.88 3.54 0 6.55 2.31 7.6 5.5l2.37-.78C21.08 11.03 17.15 8 12.5 8z"/></svg>
                 <span>Undo</span>
             </button>
-            <button class="mobile-tool" id="mobile-help">
-                <svg viewBox="0 0 24 24" fill="currentColor"><path d="M11 18h2v-2h-2v2zm1-16C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8zm0-14c-2.21 0-4 1.79-4 4h2c0-1.1.9-2 2-2s2 .9 2 2c0 2-3 1.75-3 5h2c0-2.25 3-2.5 3-5 0-2.21-1.79-4-4-4z"/></svg>
-                <span>Help</span>
+            <button class="mobile-tool" id="mobile-more">
+                <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 8c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2zm0 2c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm0 6c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2z"/></svg>
+                <span>More</span>
             </button>
         </nav>
+
+        <!-- Mobile More Menu -->
+        <div class="mobile-more-overlay" id="mobileMoreOverlay">
+            <div class="mobile-more-content">
+                <button class="mobile-more-item" id="mobile-mode">
+                    <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 5.5L10 8H14L12 5.5M18 10L20.5 12L18 14V10M6 10V14L3.5 12L6 10M12 18.5L14 16H10L12 18.5M12 8C9.79 8 8 9.79 8 12S9.79 16 12 16 16 14.21 16 12 14.21 8 12 8Z"/></svg>
+                    <span>Fly Mode</span>
+                </button>
+                <button class="mobile-more-item" id="mobile-help">
+                    <svg viewBox="0 0 24 24" fill="currentColor"><path d="M11 18h2v-2h-2v2zm1-16C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8zm0-14c-2.21 0-4 1.79-4 4h2c0-1.1.9-2 2-2s2 .9 2 2c0 2-3 1.75-3 5h2c0-2.25 3-2.5 3-5 0-2.21-1.79-4-4-4z"/></svg>
+                    <span>Help</span>
+                </button>
+            </div>
+        </div>
 
         <!-- Mobile Material Picker -->
         <div class="mobile-material-overlay" id="mobileMaterialOverlay">
@@ -177,6 +195,28 @@
         });
         document.getElementById('closeMobileMaterial')?.addEventListener('click', () => {
             document.getElementById('mobileMaterialOverlay').classList.remove('active');
+        });
+
+        // Mobile place/remove buttons
+        document.getElementById('mobile-place')?.addEventListener('click', () => {
+            if (typeof placeBlock === 'function') {
+                placeBlock();
+            }
+        });
+        document.getElementById('mobile-remove')?.addEventListener('click', () => {
+            if (typeof removeBlockAtCursor === 'function') {
+                removeBlockAtCursor();
+            }
+        });
+
+        // Mobile more menu
+        document.getElementById('mobile-more')?.addEventListener('click', () => {
+            document.getElementById('mobileMoreOverlay').classList.toggle('active');
+        });
+        document.getElementById('mobileMoreOverlay')?.addEventListener('click', (e) => {
+            if (e.target.id === 'mobileMoreOverlay') {
+                e.target.classList.remove('active');
+            }
         });
 
         // Register Service Worker
